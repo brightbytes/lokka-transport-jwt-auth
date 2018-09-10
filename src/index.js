@@ -10,6 +10,8 @@ const MIN_REFRESH_TIMEOUT = 1000 * 60;
 const MAX_JOB_WAIT_TIME = 1000 * 10;
 const ERR_JOB_TIMEOUT = new Error('job timeout');
 
+const MAX_IMMEDIATE_REFRESHES = 3;
+
 
 export default class Transport {
   constructor(endpoint, arg2, arg3) {
@@ -49,6 +51,8 @@ export default class Transport {
     // true if the transport is manually closed
     // no further communication will be possible
     this._closed = false;
+
+    this._refreshFailures = 0;
 
     // refresh immediately
     this._scheduleRefresh(0);
@@ -118,13 +122,20 @@ export default class Transport {
         throw new Error('invalid token');
       }
 
+      this._refreshFailures = 0;
+
       // schedule next token refresh
       const expires = payload.exp * 1000;
       this._scheduleRefresh(expires);
     } catch (e) {
       // console.log the error??
       this._transport = null;
-      this._scheduleRefresh(0);
+      this._refreshFailures++;
+      if (this._refreshFailures >= MAX_IMMEDIATE_REFRESHES) {
+        this._scheduleRefresh(Date.now() + MIN_REFRESH_TIMEOUT);
+      } else {
+        this._scheduleRefresh(0);
+      }
     }
   }
 
@@ -132,13 +143,6 @@ export default class Transport {
     const now = Date.now();
     const timeLeft = expires - now;
 
-    if (timeLeft <= MIN_REFRESH_TIMEOUT) {
-      this._refreshToken();
-      return;
-    }
-
-    // add some slack time to avoid queuing
-    const timeout = timeLeft - MIN_REFRESH_TIMEOUT;
-    setTimeout(() => this._refreshToken(), timeout);
+    setTimeout(() => this._refreshToken(), timeLeft);
   }
 }
