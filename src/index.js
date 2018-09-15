@@ -1,16 +1,10 @@
 import jwtDecode from 'jwt-decode';
 import HttpTransport from 'lokka-transport-http';
 
-// if the token expires within the next N ms
-// it will be refreshed immediately.
-const MIN_REFRESH_TIMEOUT = 1000 * 60;
-
 // if the token is not available, the job will
 // wait for this number of milliseconds
 const MAX_JOB_WAIT_TIME = 1000 * 10;
 const ERR_JOB_TIMEOUT = new Error('job timeout');
-
-const MAX_IMMEDIATE_REFRESHES = 3;
 
 
 export default class Transport {
@@ -51,8 +45,6 @@ export default class Transport {
     // true if the transport is manually closed
     // no further communication will be possible
     this._closed = false;
-
-    this._refreshFailures = 0;
 
     // refresh immediately
     this._scheduleRefresh(0);
@@ -103,40 +95,27 @@ export default class Transport {
       return;
     }
 
-    try {
-      const token = await this._refreshFn();
-      if (!token) {
-        throw new Error('invalid token');
-      }
-
-      const options = Object.assign({headers: {}}, this._options);
-      options.headers.Authorization = `Bearer ${token}`;
-
-      this._transport = new HttpTransport(this._endpoint, options);
-      this._processWaitlist();
-
-      // assuming the token has an expiration time
-      // TODO handle tokens without expiration times
-      const payload = jwtDecode(token);
-      if (!payload || !payload.exp) {
-        throw new Error('invalid token');
-      }
-
-      this._refreshFailures = 0;
-
-      // schedule next token refresh
-      const expires = payload.exp * 1000;
-      this._scheduleRefresh(expires);
-    } catch (e) {
-      // console.log the error??
-      this._transport = null;
-      this._refreshFailures++;
-      if (this._refreshFailures >= MAX_IMMEDIATE_REFRESHES) {
-        this._scheduleRefresh(Date.now() + MIN_REFRESH_TIMEOUT);
-      } else {
-        this._scheduleRefresh(0);
-      }
+    const token = await this._refreshFn();
+    if (!token) {
+      throw new Error('invalid token');
     }
+
+    const options = Object.assign({headers: {}}, this._options);
+    options.headers.Authorization = `Bearer ${token}`;
+
+    this._transport = new HttpTransport(this._endpoint, options);
+    this._processWaitlist();
+
+    // assuming the token has an expiration time
+    // TODO handle tokens without expiration times
+    const payload = jwtDecode(token);
+    if (!payload || !payload.exp) {
+      throw new Error('invalid token');
+    }
+
+    // schedule next token refresh
+    const expires = payload.exp * 1000;
+    this._scheduleRefresh(expires);
   }
 
   _scheduleRefresh(expires) {
