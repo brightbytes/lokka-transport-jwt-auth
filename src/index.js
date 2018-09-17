@@ -120,7 +120,7 @@ export default class Transport {
 
   _scheduleRefresh(expires) {
     const now = Date.now();
-    const timeLeft = expires - now;
+    const timeLeft = expires >= now ? expires - now : 0;
 
     setTimeout(() => this._refreshToken(), timeLeft);
   }
